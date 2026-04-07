@@ -1,0 +1,457 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// AUTH & USERS
+// ============================================================
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String
+  avatar          String?
+  tag             String    @unique  // e.g. @studyflow_user
+  passwordHash    String?
+  googleId        String?   @unique
+  googleTokens    Json?     // { access_token, refresh_token, expiry_date }
+  language        String    @default("ru")
+  timezone        String    @default("Asia/Bishkek")
+  isPremium       Boolean   @default(false)
+  isVerified      Boolean   @default(false)
+  verifyToken     String?
+  resetToken      String?
+  resetTokenExp   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  sessions        StudySession[]
+  tasks           Task[]
+  calendarEvents  CalendarEvent[]
+  progress        SubjectProgress[]
+  groupMembers    GroupMember[]
+  sentMessages    ChatMessage[]    @relation("MessageSender")
+  notifications   Notification[]
+  aiChats         AiChat[]
+  settings        UserSettings?
+  analytics       Analytics[]
+
+  @@map("users")
+}
+
+model UserSettings {
+  id                String  @id @default(uuid())
+  userId            String  @unique
+  pomodoroWork      Int     @default(25)    // minutes
+  pomodoroBreak     Int     @default(5)
+  dailyGoalMinutes  Int     @default(120)
+  weeklyGoalDays    Int     @default(5)
+  soundEnabled      Boolean @default(true)
+  theme             String  @default("light")
+  notifyEmail       Boolean @default(true)
+  notifyPush        Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// ============================================================
+// TRACKING & SESSIONS
+// ============================================================
+
+model StudySession {
+  id          String    @id @default(uuid())
+  userId      String
+  subject     String?
+  categoryId  String?
+  duration    Int       // seconds
+  type        SessionType @default(REGULAR)
+  isPomodoro  Boolean   @default(false)
+  startedAt   DateTime
+  endedAt     DateTime?
+  notes       String?
+  groupId     String?
+  createdAt   DateTime  @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id])
+
+  @@map("study_sessions")
+}
+
+enum SessionType {
+  REGULAR
+  FOCUS
+  POMODORO
+  GROUP
+}
+
+model Category {
+  id       String @id @default(uuid())
+  name     String
+  color    String @default("#7C6FE0")
+  icon     String @default("📚")
+  userId   String?  // null = global preset
+
+  sessions StudySession[]
+  tasks    Task[]
+
+  @@map("categories")
+}
+
+// ============================================================
+// TASKS & PLANNER
+// ============================================================
+
+model Task {
+  id          String    @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  categoryId  String?
+  subjectId   String?
+  dueDate     DateTime?
+  dueTime     String?
+  priority    Priority  @default(MEDIUM)
+  status      TaskStatus @default(PENDING)
+  isRecurring Boolean   @default(false)
+  recurRule   String?   // iCal RRULE
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id])
+
+  @@map("tasks")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+// ============================================================
+// EDUCATION CONTENT
+// ============================================================
+
+model EducationTrack {
+  id          String  @id @default(uuid())
+  name        String  // HighSchool, University, TOEFL, IELTS
+  slug        String  @unique
+  description String?
+  icon        String?
+  isActive    Boolean @default(true)
+
+  grades Subject[]
+
+  @@map("education_tracks")
+}
+
+model Subject {
+  id          String  @id @default(uuid())
+  trackId     String
+  grade       Int?    // 5-12 for HighSchool
+  name        String  // Математика
+  nameRu      String?
+  nameKy      String?
+  icon        String?
+  color       String  @default("#7C6FE0")
+  order       Int     @default(0)
+
+  track    EducationTrack @relation(fields: [trackId], references: [id])
+  chapters Chapter[]
+  progress SubjectProgress[]
+
+  @@map("subjects")
+}
+
+model Chapter {
+  id        String  @id @default(uuid())
+  subjectId String
+  title     String
+  titleRu   String?
+  order     Int     @default(0)
+
+  subject  Subject  @relation(fields: [subjectId], references: [id])
+  lessons  Lesson[]
+
+  @@map("chapters")
+}
+
+model Lesson {
+  id          String  @id @default(uuid())
+  chapterId   String
+  title       String
+  content     String? // Markdown/HTML theory
+  videoUrl    String? // YouTube embed
+  duration    Int?    // estimated minutes
+  order       Int     @default(0)
+  isPublished Boolean @default(false)
+
+  chapter   Chapter    @relation(fields: [chapterId], references: [id])
+  questions Question[]
+  progress  LessonProgress[]
+
+  @@map("lessons")
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  lessonId      String
+  text          String
+  type          QuestionType @default(SINGLE)
+  options       Json     // [{ id, text, isCorrect }]
+  explanation   String?
+  hint          String?
+  points        Int      @default(1)
+  order         Int      @default(0)
+
+  lesson  Lesson @relation(fields: [lessonId], references: [id])
+
+  @@map("questions")
+}
+
+enum QuestionType {
+  SINGLE
+  MULTIPLE
+  TRUE_FALSE
+  TEXT
+}
+
+model SubjectProgress {
+  id             String  @id @default(uuid())
+  userId         String
+  subjectId      String
+  lessonsTotal   Int     @default(0)
+  lessonsCompleted Int   @default(0)
+  testsPassed    Int     @default(0)
+  avgScore       Float   @default(0)
+  lastStudiedAt  DateTime?
+  streak         Int     @default(0)
+  totalMinutes   Int     @default(0)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id])
+
+  @@unique([userId, subjectId])
+  @@map("subject_progress")
+}
+
+model LessonProgress {
+  id          String   @id @default(uuid())
+  userId      String
+  lessonId    String
+  isCompleted Boolean  @default(false)
+  score       Float?
+  attempts    Int      @default(0)
+  completedAt DateTime?
+
+  lesson Lesson @relation(fields: [lessonId], references: [id])
+
+  @@unique([userId, lessonId])
+  @@map("lesson_progress")
+}
+
+// ============================================================
+// CALENDAR
+// ============================================================
+
+model CalendarEvent {
+  id              String    @id @default(uuid())
+  userId          String
+  title           String
+  description     String?
+  startAt         DateTime
+  endAt           DateTime
+  color           String    @default("#7C6FE0")
+  type            EventType @default(STUDY)
+  googleEventId   String?   @unique // for Google Calendar sync
+  isAllDay        Boolean   @default(false)
+  recurrence      String?   // RRULE
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("calendar_events")
+}
+
+enum EventType {
+  STUDY
+  TEST
+  CLASS
+  PERSONAL
+  GROUP
+}
+
+// ============================================================
+// GROUPS
+// ============================================================
+
+model Group {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  avatar      String?
+  tag         String  @unique
+  isPublic    Boolean @default(true)
+  goal        String?
+  maxMembers  Int     @default(50)
+  createdAt   DateTime @default(now())
+  createdBy   String
+
+  members  GroupMember[]
+  messages ChatMessage[]
+  challenges GroupChallenge[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id       String      @id @default(uuid())
+  groupId  String
+  userId   String
+  role     GroupRole   @default(MEMBER)
+  joinedAt DateTime    @default(now())
+  isActive Boolean     @default(true)
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  groupId   String
+  senderId  String
+  content   String
+  type      MessageType @default(TEXT)
+  createdAt DateTime @default(now())
+  editedAt  DateTime?
+
+  group  Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender User  @relation("MessageSender", fields: [senderId], references: [id])
+
+  @@map("chat_messages")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+}
+
+model GroupChallenge {
+  id          String   @id @default(uuid())
+  groupId     String
+  title       String
+  description String?
+  targetMinutes Int
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@map("group_challenges")
+}
+
+// ============================================================
+// ANALYTICS
+// ============================================================
+
+model Analytics {
+  id              String   @id @default(uuid())
+  userId          String
+  date            DateTime @db.Date
+  totalMinutes    Int      @default(0)
+  sessionsCount   Int      @default(0)
+  subjectsStudied Json     @default("[]")  // [{ subjectId, minutes }]
+  tasksCompleted  Int      @default(0)
+  streakDay       Int      @default(0)
+  focusScore      Float    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("analytics")
+}
+
+// ============================================================
+// AI CHATBOT
+// ============================================================
+
+model AiChat {
+  id        String       @id @default(uuid())
+  userId    String
+  title     String?
+  messages  AiMessage[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_chats")
+}
+
+model AiMessage {
+  id        String   @id @default(uuid())
+  chatId    String
+  role      AiRole
+  content   String
+  createdAt DateTime @default(now())
+
+  chat AiChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@map("ai_messages")
+}
+
+enum AiRole {
+  USER
+  ASSISTANT
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  isRead    Boolean  @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
