@@ -19,6 +19,11 @@ import calendarRoutes from './modules/calendar/calendar.routes'
 import analyticsRoutes from './modules/analytics/analytics.routes'
 import groupsRoutes from './modules/groups/groups.routes'
 import aiRoutes from './modules/ai/ai.routes'
+import adminRoutes from './modules/admin/admin.routes'
+import learnRoutes from './modules/learn/learn.routes'
+
+import tasksRoutes from './modules/tasks/tasks.routes'
+import goalsRoutes from './modules/goals/goals.routes'
 
 const app = express()
 const httpServer = createServer(app)
@@ -94,6 +99,10 @@ app.use('/api/calendar', calendarRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/groups', groupsRoutes)
 app.use('/api/ai', aiRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/learn', learnRoutes)
+app.use('/api/tasks', tasksRoutes)
+app.use('/api/goals', goalsRoutes)
 
 // ─── 404 ─────────────────────────────────────────────────────
 app.use('*', (req, res) => {
@@ -113,6 +122,8 @@ process.on('unhandledRejection', (err: any) => {
 })
 // ─── Error Handler ────────────────────────────────────────────
 app.use(errorHandler)
+
+
 
 // ─── Start Server ─────────────────────────────────────────────
 httpServer.listen(env.PORT, () => {

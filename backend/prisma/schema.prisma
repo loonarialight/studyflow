@@ -11,15 +11,21 @@ datasource db {
 // AUTH & USERS
 // ============================================================
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 model User {
   id              String    @id @default(uuid())
   email           String    @unique
   name            String
   avatar          String?
-  tag             String    @unique  // e.g. @studyflow_user
+  tag             String    @unique
   passwordHash    String?
   googleId        String?   @unique
-  googleTokens    Json?     // { access_token, refresh_token, expiry_date }
+  googleTokens    Json?
+  role            UserRole  @default(USER)          // ← ДОБАВЛЕНО
   language        String    @default("ru")
   timezone        String    @default("Asia/Bishkek")
   isPremium       Boolean   @default(false)
@@ -30,7 +36,6 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  // Relations
   sessions        StudySession[]
   tasks           Task[]
   calendarEvents  CalendarEvent[]
@@ -41,6 +46,7 @@ model User {
   aiChats         AiChat[]
   settings        UserSettings?
   analytics       Analytics[]
+  goals           Goal[]
 
   @@map("users")
 }
@@ -48,7 +54,7 @@ model User {
 model UserSettings {
   id                String  @id @default(uuid())
   userId            String  @unique
-  pomodoroWork      Int     @default(25)    // minutes
+  pomodoroWork      Int     @default(25)
   pomodoroBreak     Int     @default(5)
   dailyGoalMinutes  Int     @default(120)
   weeklyGoalDays    Int     @default(5)
@@ -67,18 +73,18 @@ model UserSettings {
 // ============================================================
 
 model StudySession {
-  id          String    @id @default(uuid())
+  id          String      @id @default(uuid())
   userId      String
   subject     String?
   categoryId  String?
-  duration    Int       // seconds
+  duration    Int
   type        SessionType @default(REGULAR)
-  isPomodoro  Boolean   @default(false)
+  isPomodoro  Boolean     @default(false)
   startedAt   DateTime
   endedAt     DateTime?
   notes       String?
   groupId     String?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime    @default(now())
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id])
@@ -94,11 +100,11 @@ enum SessionType {
 }
 
 model Category {
-  id       String @id @default(uuid())
+  id       String  @id @default(uuid())
   name     String
-  color    String @default("#7C6FE0")
-  icon     String @default("📚")
-  userId   String?  // null = global preset
+  color    String  @default("#7C6FE0")
+  icon     String  @default("📚")
+  userId   String?
 
   sessions StudySession[]
   tasks    Task[]
@@ -111,7 +117,7 @@ model Category {
 // ============================================================
 
 model Task {
-  id          String    @id @default(uuid())
+  id          String     @id @default(uuid())
   userId      String
   title       String
   description String?
@@ -119,18 +125,33 @@ model Task {
   subjectId   String?
   dueDate     DateTime?
   dueTime     String?
-  priority    Priority  @default(MEDIUM)
+  priority    Priority   @default(MEDIUM)
   status      TaskStatus @default(PENDING)
-  isRecurring Boolean   @default(false)
-  recurRule   String?   // iCal RRULE
+  isRecurring Boolean    @default(false)
+  recurRule   String?
   completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id])
 
   @@map("tasks")
+}
+
+model Goal {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  deadline    DateTime?
+  isPrimary   Boolean  @default(false)
+  isCompleted Boolean  @default(false)
+  color       String   @default("#7c3aed")
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("goals")
 }
 
 enum Priority {
@@ -153,7 +174,7 @@ enum TaskStatus {
 
 model EducationTrack {
   id          String  @id @default(uuid())
-  name        String  // HighSchool, University, TOEFL, IELTS
+  name        String
   slug        String  @unique
   description String?
   icon        String?
@@ -167,15 +188,15 @@ model EducationTrack {
 model Subject {
   id          String  @id @default(uuid())
   trackId     String
-  grade       Int?    // 5-12 for HighSchool
-  name        String  // Математика
+  grade       Int?
+  name        String
   nameRu      String?
   nameKy      String?
   icon        String?
   color       String  @default("#7C6FE0")
   order       Int     @default(0)
 
-  track    EducationTrack @relation(fields: [trackId], references: [id])
+  track    EducationTrack   @relation(fields: [trackId], references: [id])
   chapters Chapter[]
   progress SubjectProgress[]
 
@@ -199,13 +220,13 @@ model Lesson {
   id          String  @id @default(uuid())
   chapterId   String
   title       String
-  content     String? // Markdown/HTML theory
-  videoUrl    String? // YouTube embed
-  duration    Int?    // estimated minutes
+  content     String?
+  videoUrl    String?
+  duration    Int?
   order       Int     @default(0)
   isPublished Boolean @default(false)
 
-  chapter   Chapter    @relation(fields: [chapterId], references: [id])
+  chapter   Chapter          @relation(fields: [chapterId], references: [id])
   questions Question[]
   progress  LessonProgress[]
 
@@ -213,17 +234,17 @@ model Lesson {
 }
 
 model Question {
-  id            String   @id @default(uuid())
-  lessonId      String
-  text          String
-  type          QuestionType @default(SINGLE)
-  options       Json     // [{ id, text, isCorrect }]
-  explanation   String?
-  hint          String?
-  points        Int      @default(1)
-  order         Int      @default(0)
+  id          String       @id @default(uuid())
+  lessonId    String
+  text        String
+  type        QuestionType @default(SINGLE)
+  options     Json
+  explanation String?
+  hint        String?
+  points      Int          @default(1)
+  order       Int          @default(0)
 
-  lesson  Lesson @relation(fields: [lessonId], references: [id])
+  lesson Lesson @relation(fields: [lessonId], references: [id])
 
   @@map("questions")
 }
@@ -236,16 +257,16 @@ enum QuestionType {
 }
 
 model SubjectProgress {
-  id             String  @id @default(uuid())
-  userId         String
-  subjectId      String
-  lessonsTotal   Int     @default(0)
-  lessonsCompleted Int   @default(0)
-  testsPassed    Int     @default(0)
-  avgScore       Float   @default(0)
-  lastStudiedAt  DateTime?
-  streak         Int     @default(0)
-  totalMinutes   Int     @default(0)
+  id               String    @id @default(uuid())
+  userId           String
+  subjectId        String
+  lessonsTotal     Int       @default(0)
+  lessonsCompleted Int       @default(0)
+  testsPassed      Int       @default(0)
+  avgScore         Float     @default(0)
+  lastStudiedAt    DateTime?
+  streak           Int       @default(0)
+  totalMinutes     Int       @default(0)
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject Subject @relation(fields: [subjectId], references: [id])
@@ -255,12 +276,12 @@ model SubjectProgress {
 }
 
 model LessonProgress {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   userId      String
   lessonId    String
-  isCompleted Boolean  @default(false)
+  isCompleted Boolean   @default(false)
   score       Float?
-  attempts    Int      @default(0)
+  attempts    Int       @default(0)
   completedAt DateTime?
 
   lesson Lesson @relation(fields: [lessonId], references: [id])
@@ -274,18 +295,18 @@ model LessonProgress {
 // ============================================================
 
 model CalendarEvent {
-  id              String    @id @default(uuid())
-  userId          String
-  title           String
-  description     String?
-  startAt         DateTime
-  endAt           DateTime
-  color           String    @default("#7C6FE0")
-  type            EventType @default(STUDY)
-  googleEventId   String?   @unique // for Google Calendar sync
-  isAllDay        Boolean   @default(false)
-  recurrence      String?   // RRULE
-  createdAt       DateTime  @default(now())
+  id            String    @id @default(uuid())
+  userId        String
+  title         String
+  description   String?
+  startAt       DateTime
+  endAt         DateTime
+  color         String    @default("#7C6FE0")
+  type          EventType @default(STUDY)
+  googleEventId String?   @unique
+  isAllDay      Boolean   @default(false)
+  recurrence    String?
+  createdAt     DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -305,31 +326,31 @@ enum EventType {
 // ============================================================
 
 model Group {
-  id          String  @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
   description String?
   avatar      String?
-  tag         String  @unique
-  isPublic    Boolean @default(true)
+  tag         String   @unique
+  isPublic    Boolean  @default(true)
   goal        String?
-  maxMembers  Int     @default(50)
+  maxMembers  Int      @default(50)
   createdAt   DateTime @default(now())
   createdBy   String
 
-  members  GroupMember[]
-  messages ChatMessage[]
+  members    GroupMember[]
+  messages   ChatMessage[]
   challenges GroupChallenge[]
 
   @@map("groups")
 }
 
 model GroupMember {
-  id       String      @id @default(uuid())
+  id       String    @id @default(uuid())
   groupId  String
   userId   String
-  role     GroupRole   @default(MEMBER)
-  joinedAt DateTime    @default(now())
-  isActive Boolean     @default(true)
+  role     GroupRole @default(MEMBER)
+  joinedAt DateTime  @default(now())
+  isActive Boolean   @default(true)
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -345,12 +366,12 @@ enum GroupRole {
 }
 
 model ChatMessage {
-  id        String   @id @default(uuid())
+  id        String      @id @default(uuid())
   groupId   String
   senderId  String
   content   String
   type      MessageType @default(TEXT)
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
   editedAt  DateTime?
 
   group  Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -367,15 +388,15 @@ enum MessageType {
 }
 
 model GroupChallenge {
-  id          String   @id @default(uuid())
-  groupId     String
-  title       String
-  description String?
+  id            String   @id @default(uuid())
+  groupId       String
+  title         String
+  description   String?
   targetMinutes Int
-  startDate   DateTime
-  endDate     DateTime
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  startDate     DateTime
+  endDate       DateTime
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
@@ -392,7 +413,7 @@ model Analytics {
   date            DateTime @db.Date
   totalMinutes    Int      @default(0)
   sessionsCount   Int      @default(0)
-  subjectsStudied Json     @default("[]")  // [{ subjectId, minutes }]
+  subjectsStudied Json     @default("[]")
   tasksCompleted  Int      @default(0)
   streakDay       Int      @default(0)
   focusScore      Float    @default(0)
@@ -408,12 +429,12 @@ model Analytics {
 // ============================================================
 
 model AiChat {
-  id        String       @id @default(uuid())
+  id        String      @id @default(uuid())
   userId    String
   title     String?
   messages  AiMessage[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

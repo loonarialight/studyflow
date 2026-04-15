@@ -35,14 +35,17 @@ export const registerUser = async (data: {
       passwordHash,
       settings: { create: {} },
     },
-    select: { id: true, email: true, name: true, tag: true, isPremium: true },
+    select: { id: true, email: true, name: true, tag: true, isPremium: true, role: true },
   })
 
   return generateTokens(user)
 }
 
 export const loginUser = async (email: string, password: string) => {
-  const user = await prisma.user.findUnique({ where: { email } })
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, name: true, isPremium: true, role: true, passwordHash: true },
+  })
   if (!user?.passwordHash) throw new AppError('Invalid credentials', 401)
 
   const valid = await bcrypt.compare(password, user.passwordHash)
@@ -50,7 +53,6 @@ export const loginUser = async (email: string, password: string) => {
 
   return generateTokens(user)
 }
-
 // ─── Google OAuth ──────────────────────────────────────────────
 
 export const getGoogleAuthUrl = () => {
@@ -76,7 +78,6 @@ export const handleGoogleCallback = async (code: string) => {
   const payload = ticket.getPayload()!
   const { sub: googleId, email, name, picture } = payload
 
-  // Generate unique tag from name
   const baseTag = `@${(name || email!.split('@')[0])
     .toLowerCase()
     .replace(/\s+/g, '_')
@@ -85,21 +86,14 @@ export const handleGoogleCallback = async (code: string) => {
 
   const user = await prisma.user.upsert({
     where: { googleId: googleId! },
-    update: {
-      googleTokens: tokens as any,
-      avatar: picture,
-      name: name || '',
-    },
+    update: { googleTokens: tokens as any, avatar: picture, name: name || '' },
     create: {
-      email: email!,
-      name: name || '',
-      tag,
-      googleId: googleId!,
-      googleTokens: tokens as any,
-      avatar: picture,
-      isVerified: true,
+      email: email!, name: name || '', tag,
+      googleId: googleId!, googleTokens: tokens as any,
+      avatar: picture, isVerified: true,
       settings: { create: {} },
     },
+    select: { id: true, email: true, name: true, isPremium: true, role: true },
   })
 
   return generateTokens(user)
@@ -107,11 +101,11 @@ export const handleGoogleCallback = async (code: string) => {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-const generateTokens = (user: { id: string; email: string; name: string; isPremium: boolean }) => {
-  const payload = { userId: user.id, email: user.email }
+const generateTokens = (user: { id: string; email: string; name: string; isPremium: boolean; role: string }) => {
+  const payload = { userId: user.id, email: user.email, role: user.role }  // ← добавь role
   return {
     accessToken: signAccessToken(payload),
     refreshToken: signRefreshToken(payload),
-    user: { id: user.id, email: user.email, name: user.name, isPremium: user.isPremium },
+    user: { id: user.id, email: user.email, name: user.name, isPremium: user.isPremium, role: user.role },
   }
 }
