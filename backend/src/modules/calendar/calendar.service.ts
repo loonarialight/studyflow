@@ -2,6 +2,7 @@ import { google } from 'googleapis'
 import { prisma } from '../../config/database'
 import { env } from '../../config/env'
 import { AppError } from '../../middleware/errorHandler'
+import { toUserLocalISO } from '../../utils/timezone'
 
 const getGoogleClient = async (userId: string) => {
   const user = await prisma.user.findUnique({
@@ -45,8 +46,8 @@ export const createEvent = async (userId: string, data: {
       userId,
       title:       data.title,
       description: data.description,
-      startAt:     new Date(data.startAt),
-      endAt:       new Date(data.endAt),
+      startAt:     new Date(toUserLocalISO(data.startAt)),
+      endAt:       new Date(toUserLocalISO(data.endAt)),
       color:       data.color || '#7C6FE0',
       type:        (data.type as any) || 'STUDY',
     },
@@ -61,8 +62,8 @@ export const createEvent = async (userId: string, data: {
         requestBody: {
           summary:     data.title,
           description: data.description,
-          start: { dateTime: new Date(data.startAt).toISOString() },
-          end:   { dateTime: new Date(data.endAt).toISOString() },
+          start: { dateTime: new Date(toUserLocalISO(data.startAt)).toISOString() },
+          end:   { dateTime: new Date(toUserLocalISO(data.endAt)).toISOString() },
           colorId: '3',
         },
       })

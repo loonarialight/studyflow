@@ -104,8 +104,8 @@ Each event must follow this exact shape:
   {
     "title": "string",
     "description": "optional string or null",
-    "startAt": "YYYY-MM-DDTHH:MM:00.000Z",
-    "endAt":   "YYYY-MM-DDTHH:MM:00.000Z",
+    "startAt": "YYYY-MM-DDTHH:MM:00",
+    "endAt":   "YYYY-MM-DDTHH:MM:00",
     "type": "STUDY|TEST|CLASS|PERSONAL|GROUP"
   }
 ]
@@ -113,6 +113,9 @@ Each event must follow this exact shape:
 Rules:
 - If no year is given, use ${today.slice(0, 4)}.
 - If no end time is given, add 1 hour to startAt.
+- Times in startAt/endAt are the user's LOCAL wall-clock time exactly as written
+  (e.g. "9:00" → "09:00:00"). Do NOT add "Z" or any timezone offset, and do NOT
+  convert to UTC — leave the numbers exactly as the user wrote them.
 - type mapping:
     лекция / lecture / пара → CLASS
     экзамен / зачёт / test / exam → TEST

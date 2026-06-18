@@ -47,6 +47,8 @@ model User {
   settings        UserSettings?
   analytics       Analytics[]
   goals           Goal[]
+  groupMemberships  GroupMembership[]   // ← добавь
+  groupChatMessages GroupChatMessage[]  
 
   @@map("users")
 }
@@ -340,6 +342,19 @@ model Group {
   members    GroupMember[]
   messages   ChatMessage[]
   challenges GroupChallenge[]
+  passwordHash                String?
+  inviteCode                  String?  @unique
+  chatEnabled                 Boolean  @default(false)
+  memberSendPermissionDefault Boolean  @default(false)
+  rulesText                   String   @default("")
+  minStudyMinutesPerDay       Int      @default(60)
+  maxDayOffsPerPeriod         Int      @default(3)
+  allowedApps                 String[]
+  announcement                String   @default("")
+  memberships                 GroupMembership[]
+  groupDayOffs                GroupDayOff[]
+  groupViolations             GroupViolation[]
+  groupMessages               GroupChatMessage[]
 
   @@map("groups")
 }
@@ -475,4 +490,71 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+model GroupMembership {
+  id              String    @id @default(cuid())
+  userId          String
+  groupId         String
+  role            GroupRole @default(MEMBER)
+  canSendMessages Boolean   @default(false)
+  joinedAt        DateTime  @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@map("group_memberships")
+}
+
+model GroupChatMessage {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  content   String
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("group_chat_messages")
+}
+
+model GroupDayOff {
+  id      String       @id @default(cuid())
+  userId  String
+  groupId String
+  date    String
+  status  DayOffStatus
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId, date])
+  @@map("group_day_offs")
+}
+
+model GroupViolation {
+  id        String        @id @default(cuid())
+  userId    String
+  groupId   String
+  type      ViolationType
+  date      String
+  note      String?
+  createdAt DateTime      @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@map("group_violations")
+}
+
+enum DayOffStatus {
+  NONE
+  HALF
+  FULL
+}
+
+enum ViolationType {
+  UNAUTHORIZED_LEAVE
+  FAKE_TIMER
+  MISSING_DAYOFF
 }

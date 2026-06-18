@@ -18,7 +18,13 @@
   },
   "dependencies": {
     "@dnd-kit/modifiers": "^9.0.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.1.1",
+    "@mui/material": "^9.1.1",
+    "@reduxjs/toolkit": "^2.12.0",
     "@tailwindcss/typography": "^0.5.19",
-    "framer-motion": "^12.38.0"
+    "framer-motion": "^12.40.0",
+    "react-redux": "^9.3.0"
   }
 }

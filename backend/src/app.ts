@@ -24,6 +24,7 @@ import learnRoutes from './modules/learn/learn.routes'
 
 import tasksRoutes from './modules/tasks/tasks.routes'
 import goalsRoutes from './modules/goals/goals.routes'
+ 
 
 const app = express()
 const httpServer = createServer(app)
@@ -103,6 +104,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/learn', learnRoutes)
 app.use('/api/tasks', tasksRoutes)
 app.use('/api/goals', goalsRoutes)
+ 
 
 // ─── 404 ─────────────────────────────────────────────────────
 app.use('*', (req, res) => {
