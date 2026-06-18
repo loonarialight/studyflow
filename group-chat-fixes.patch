@@ -1,0 +1,178 @@
+From: StudyFlow bugfix
+Subject: fix(groups): auth header in chat requests, message field mapping, realtime via socket
+
+--- a/frontend/src/store/groupSlice.ts
++++ b/frontend/src/store/groupSlice.ts
+@@ -36,12 +36,16 @@
+ const apiCall = async (
+   url: string,
+   options?: RequestInit
+ ): Promise<Response> => {
+-  const res = await fetch(url, {
+-    headers: { 'Content-Type': 'application/json' },
+-    ...options,
+-  });
++  const token = localStorage.getItem('accessToken');
++  const res = await fetch(url, {
++    ...options,
++    headers: {
++      'Content-Type': 'application/json',
++      ...(token ? { Authorization: `Bearer ${token}` } : {}),
++      ...(options?.headers ?? {}),
++    },
++  });
+   if (!res.ok) {
+     const msg = await res.text().catch(() => res.statusText);
+     throw new Error(msg);
+   }
+   return res;
+ };
+
+--- a/backend/src/services/groupService.ts
++++ b/backend/src/services/groupService.ts
+@@ -1,8 +1,21 @@
+ // ─── Чат ─────────────────────────────────────────────────────────────────────
+
++/**
++ * Приводим запись из БД (user: {name, avatar}, createdAt) к плоской
++ * форме, которую ждёт фронтенд (nickname, profileImageUrl, sentAt).
++ * Раньше это не делалось -> msg.nickname[0] падал с TypeError на чужих сообщениях.
++ */
++function toClientMessage(m: any) {
++  return {
++    id: m.id,
++    groupId: m.groupId,
++    userId: m.userId,
++    nickname: m.user?.name ?? 'Участник', // их поле — name
++    profileImageUrl: m.user?.avatar,      // их поле — avatar
++    content: m.content,
++    sentAt: m.createdAt,                  // их поле — createdAt
++    isSystem: m.isSystem,
++  };
++}
++
+ export async function getChatMessages(groupId: string, before?: string) {
+-  return db.groupChatMessage.findMany({
++  const messages = await db.groupChatMessage.findMany({
+     where: {
+       groupId,
+       ...(before && { createdAt: { lt: new Date(before) } }),
+     },
+     include: {
+       user: { select: { name: true, avatar: true } },
+     },
+     orderBy: { createdAt: 'asc' },
+     take: 50,
+   });
++  return messages.map(toClientMessage);
+ }
+
+ export async function sendMessage(
+   groupId: string,
+   userId: string,
+   content: string
+ ) {
+   const group = await db.group.findUnique({ where: { id: groupId } });
+   if (!(group as any)?.chatEnabled) throw new Error('Чат отключён');
+
+   const membership = await db.groupMembership.findUnique({
+     where: { userId_groupId: { userId, groupId } },
+   });
+   if (!membership) throw new Error('Вы не участник');
+   if (
+     (membership as any).role !== GroupRole.OWNER &&
+     !(membership as any).canSendMessages
+   ) {
+     throw new Error('Нет прав на отправку сообщений');
+   }
+
+-  return db.groupChatMessage.create({
++  const message = await db.groupChatMessage.create({
+     data: { groupId, userId, content, isSystem: false },
+     include: {
+       user: { select: { name: true, avatar: true } },
+     },
+   });
++  return toClientMessage(message);
+ }
+
+--- a/backend/src/controllers/groupController.ts
++++ b/backend/src/controllers/groupController.ts
+@@ -1,16 +1,21 @@
+ export const sendMessage = async (req: Request, res: Response) => {
+   try {
+     const { content } = req.body as SendMessageBody;
+     if (!content?.trim()) {
+       return res.status(400).json({ error: 'Пустое сообщение' });
+     }
+
+     const message = await groupService.sendMessage(
+       req.params.id,
+       req.userId,
+       content.trim()
+     );
++
++    // Реалтайм-трансляция всем участникам комнаты (раньше отсутствовала —
++    // сообщения появлялись у других только после ручного перезахода в чат)
++    const io = req.app.get('io');
++    io?.to(`group:${req.params.id}`).emit('chat:message', message);
++
+     return res.status(201).json(message);
+   } catch (e) {
+     const msg = (e as Error).message;
+     if (msg === 'Чат отключён' || msg === 'Нет прав на отправку сообщений') {
+       return res.status(403).json({ error: msg });
+     }
+     return res.status(500).json({ error: msg });
+   }
+ };
+
+--- a/frontend/src/components/GroupModule/GroupChat.tsx
++++ b/frontend/src/components/GroupModule/GroupChat.tsx
+@@ -14,11 +14,14 @@
+ import { AnimatePresence, motion } from 'framer-motion';
+ import {
+   fetchChatMessages,
+   sendChatMessage,
+   toggleChatEnabled,
+   setMemberSendPermission,
++  appendMessage,
+ } from '@/store/groupSlice';
++import { getSocket } from '@/socket/socket.client';
+ import type { AppDispatch, RootState } from '@/store';
+-import { GroupRole } from '@/types/group';
++import { GroupRole } from '@/types/group';
++import type { ChatMessage } from '@/types/group';
+
+ interface GroupChatProps {
+   groupId: string;
+   currentUserId: string;
+ }
+@@ -50,6 +53,24 @@
+   useEffect(() => {
+     if (group?.chatEnabled) {
+       dispatch(fetchChatMessages({ groupId }));
+     }
+   }, [dispatch, groupId, group?.chatEnabled]);
+
++  // ─── Realtime: join group room, listen for incoming messages ───────────
++  useEffect(() => {
++    if (!group?.chatEnabled) return;
++
++    const socket = getSocket();
++    socket.emit('group:join', groupId);
++
++    const handleIncoming = (msg: ChatMessage) => {
++      if (msg.groupId === groupId) dispatch(appendMessage(msg));
++    };
++    socket.on('chat:message', handleIncoming);
++
++    return () => {
++      socket.off('chat:message', handleIncoming);
++      socket.emit('group:leave', groupId);
++    };
++  }, [dispatch, groupId, group?.chatEnabled]);
++
+   useEffect(() => {
+     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+   }, [messages]);

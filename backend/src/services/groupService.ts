@@ -237,27 +237,39 @@ export async function setDayOff(
   });
 }
 
-// ─── Chat ─────────────────────────────────────────────────────────────────────
+// ─── Чат ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Приводим запись из БД (user: {name, avatar}, createdAt) к плоской
+ * форме, которую ждёт фронтенд (nickname, profileImageUrl, sentAt).
+ */
+function toClientMessage(m: any) {
+  return {
+    id: m.id,
+    groupId: m.groupId,
+    userId: m.userId,
+    nickname: m.user?.name ?? 'Участник',
+    profileImageUrl: m.user?.avatar,
+    content: m.content,
+    sentAt: m.createdAt,
+    isSystem: m.isSystem,
+  };
+}
 
 export async function getChatMessages(groupId: string, before?: string) {
-  return db.groupChatMessage.findMany({
+  const messages = await db.groupChatMessage.findMany({
     where: {
       groupId,
       ...(before && { createdAt: { lt: new Date(before) } }),
     },
-    include: {
-      user: { select: { name: true, avatar: true } },
-    },
+    include: { user: { select: { name: true, avatar: true } } },
     orderBy: { createdAt: 'asc' },
     take: 50,
   });
+  return messages.map(toClientMessage);
 }
 
-export async function sendMessage(
-  groupId: string,
-  userId: string,
-  content: string
-) {
+export async function sendMessage(groupId: string, userId: string, content: string) {
   const group = await db.group.findUnique({ where: { id: groupId } });
   if (!(group as any)?.chatEnabled) throw new Error('Чат отключён');
 
@@ -272,12 +284,11 @@ export async function sendMessage(
     throw new Error('Нет прав на отправку сообщений');
   }
 
-  return db.groupChatMessage.create({
+  const message = await db.groupChatMessage.create({
     data: { groupId, userId, content, isSystem: false },
-    include: {
-      user: { select: { name: true, avatar: true } },
-    },
+    include: { user: { select: { name: true, avatar: true } } },
   });
+  return toClientMessage(message);
 }
 
 // ─── Weekly stats ─────────────────────────────────────────────────────────────

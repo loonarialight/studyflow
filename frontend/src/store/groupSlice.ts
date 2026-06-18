@@ -41,9 +41,14 @@ const apiCall = async (
   url: string,
   options?: RequestInit
 ): Promise<Response> => {
+  const token = localStorage.getItem('accessToken');
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers ?? {}),
+    },
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText);

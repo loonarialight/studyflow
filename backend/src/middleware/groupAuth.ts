@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { GroupRole } from '@prisma/client';
-import { db } from '../lib/prisma';
+import { prisma } from '../config/database';
 
 declare global {
   namespace Express {
@@ -23,10 +23,10 @@ export const requireMember = async (
     const { id: groupId } = req.params;
     const userId = req.userId;
 
-    const membership = await db.groupMembership.findUnique({
-      where: { userId_groupId: { userId, groupId } },
-      select: { role: true, canSendMessages: true },
-    });
+    const membership = await prisma.groupMember.findUnique({
+  where: { groupId_userId: { groupId, userId } },
+  select: { role: true, canSendMessages: true },
+})
 
     if (!membership) {
       return res.status(403).json({ error: 'Вы не участник этой группы' });

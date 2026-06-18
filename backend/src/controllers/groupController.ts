@@ -34,6 +34,7 @@ export const createGroup = async (req: Request, res: Response) => {
     }
 
     const group = await groupService.createGroup(req.userId, body);
+
     return res.status(201).json(group);
   } catch (e) {
     return res.status(500).json({ error: (e as Error).message });
@@ -208,6 +209,11 @@ export const sendMessage = async (req: Request, res: Response) => {
       req.userId,
       content.trim()
     );
+
+    // Реалтайм-трансляция всем участникам комнаты группы
+    const io = req.app.get('io');
+    io?.to(`group:${req.params.id}`).emit('chat:message', message);
+
     return res.status(201).json(message);
   } catch (e) {
     const msg = (e as Error).message;

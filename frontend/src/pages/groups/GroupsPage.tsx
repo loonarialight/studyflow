@@ -1,40 +1,148 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Users, Search, Plus, Trophy, MessageCircle, ArrowLeft, Send } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useNavigate, useParams } from 'react-router-dom'
 import { groupsApi } from '../../api/endpoints'
+import { useAuthStore } from '../../store/auth.store'
 import { Card, Button, Spinner, Empty, Badge } from '../../shared/components/ui'
+
+// ─── Chat helpers ───────────────────────────────────────────────────────────
+
+const AVATAR_PALETTE = [
+  'bg-indigo-100 text-indigo-700',
+  'bg-pink-100 text-pink-700',
+  'bg-amber-100 text-amber-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-sky-100 text-sky-700',
+  'bg-rose-100 text-rose-700',
+  'bg-violet-100 text-violet-700',
+  'bg-teal-100 text-teal-700',
+]
+
+function colorForId(id?: string) {
+  if (!id) return AVATAR_PALETTE[0]
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length]
+}
+
+function initials(name?: string) {
+  if (!name) return '?'
+  return name.trim()[0]?.toUpperCase() ?? '?'
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.toDateString() === b.toDateString()
+}
+
+function dateDividerLabel(dateStr: string) {
+  const date = new Date(dateStr)
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+
+  if (isSameDay(date, today)) return 'Сегодня'
+  if (isSameDay(date, yesterday)) return 'Вчера'
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function formatTime(dateStr: string) {
+  return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+const GROUP_GAP_MS = 4 * 60 * 1000 // сообщения одного автора реже чем раз в 4 мин — отдельные группы
+
+type FeedItem =
+  | { kind: 'divider'; key: string; label: string }
+  | { kind: 'message'; key: string; msg: any; isFirstInGroup: boolean; isMe: boolean }
+
+function buildFeed(messages: any[], currentUserId?: string): FeedItem[] {
+  const feed: FeedItem[] = []
+  let lastDateKey: string | null = null
+  let lastSenderId: string | null = null
+  let lastTime = 0
+
+  for (const msg of messages) {
+    const senderId = msg.sender?.id ?? msg.senderId ?? null
+    const ts = new Date(msg.createdAt).getTime()
+    const dateKey = new Date(msg.createdAt).toDateString()
+
+    if (dateKey !== lastDateKey) {
+      feed.push({ kind: 'divider', key: `divider-${dateKey}`, label: dateDividerLabel(msg.createdAt) })
+      lastDateKey = dateKey
+      lastSenderId = null
+    }
+
+    const isFirstInGroup =
+      senderId !== lastSenderId || ts - lastTime > GROUP_GAP_MS
+
+    feed.push({
+      kind: 'message',
+      key: msg.id,
+      msg,
+      isFirstInGroup,
+      isMe: !!currentUserId && senderId === currentUserId,
+    })
+
+    lastSenderId = senderId
+    lastTime = ts
+  }
+
+  return feed
+}
 
 // ─── Group Detail ─────────────────────────────────────────────────────────────
 
 const GroupDetailView = ({ id }: { id: string }) => {
   const navigate = useNavigate()
+  const qc = useQueryClient()
+  const currentUser = useAuthStore((s) => s.user)
   const [message, setMessage] = useState('')
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // getById → get
   const { data, isLoading } = useQuery({
     queryKey: ['group', id],
     queryFn: () => groupsApi.get(id).then(r => r.data.data),
   })
 
-  // getMessages → messages
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: ['group-messages', id],
     queryFn: () => groupsApi.messages(id).then(r => r.data.data),
     refetchInterval: 5000,
   })
 
-  // sendMessage — теперь есть в endpoints
+  const feed = useMemo(
+    () => buildFeed(messagesData ?? [], currentUser?.id),
+    [messagesData, currentUser?.id]
+  )
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [feed.length])
+
   const sendMutation = useMutation({
-    mutationFn: () => groupsApi.sendMessage(id, { content: message }),
-    onSuccess: () => setMessage(''),
-    onError: () => toast.error('Failed to send message'),
+    mutationFn: () => groupsApi.sendMessage(id, { content: message.trim() }),
+    onSuccess: () => {
+      setMessage('')
+      if (textareaRef.current) textareaRef.current.style.height = 'auto'
+      qc.invalidateQueries({ queryKey: ['group-messages', id] })
+    },
+    onError: () => toast.error('Не удалось отправить сообщение'),
   })
 
   const handleSend = () => {
-    if (!message.trim()) return
+    if (!message.trim() || sendMutation.isPending) return
     sendMutation.mutate()
+  }
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value)
+    const el = e.target
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
   }
 
   if (isLoading) return (
@@ -54,59 +162,140 @@ const GroupDetailView = ({ id }: { id: string }) => {
         <Button variant="ghost" size="sm" onClick={() => navigate('/groups')}>
           <ArrowLeft size={16} />
         </Button>
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">{data.name}</h1>
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white shadow-sm shrink-0">
+          <Users size={18} />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-gray-900 truncate">{data.name}</h1>
           {data.description && (
-            <p className="text-sm text-gray-500">{data.description}</p>
+            <p className="text-sm text-gray-500 truncate">{data.description}</p>
           )}
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto shrink-0">
           <Badge color="purple">{data._count?.members || 0} members</Badge>
         </div>
       </div>
 
       {/* Chat */}
-      <Card className="flex flex-col h-[60vh]">
+      <Card className="flex flex-col h-[68vh] overflow-hidden p-0">
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-gray-50/60">
           {messagesLoading ? (
-            <div className="flex justify-center py-4"><Spinner /></div>
-          ) : !messagesData?.length ? (
-            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-              No messages yet. Say hi! 👋
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className={`flex gap-2 ${i % 2 ? 'flex-row-reverse' : ''}`}>
+                  <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse shrink-0" />
+                  <div className="h-10 w-40 rounded-2xl bg-gray-200 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : feed.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400">
+              <MessageCircle size={32} className="opacity-30" />
+              <p className="text-sm">Сообщений пока нет. Напишите первыми! 👋</p>
             </div>
           ) : (
-            messagesData.map((msg: any) => (
-              <div key={msg.id} className="flex gap-2">
-                <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center text-xs font-medium text-primary-600 shrink-0">
-                  {msg.sender?.name?.[0] ?? '?'}
-                </div>
-                <div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-xs font-medium text-gray-700">{msg.sender?.name ?? 'Unknown'}</span>
-                    <span className="text-xs text-gray-400">
-                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-800">{msg.content}</p>
-                </div>
-              </div>
-            ))
+            <AnimatePresence initial={false}>
+              {feed.map((item) => {
+                if (item.kind === 'divider') {
+                  return (
+                    <div key={item.key} className="flex items-center justify-center py-3">
+                      <span className="text-[11px] font-medium text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
+                        {item.label}
+                      </span>
+                    </div>
+                  )
+                }
+
+                const { msg, isFirstInGroup, isMe } = item
+                const name = msg.sender?.name || (isMe ? currentUser?.name : null) || 'Без имени'
+
+                return (
+                  <motion.div
+                    key={item.key}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''} ${
+                      isFirstInGroup ? 'mt-3' : 'mt-0.5'
+                    }`}
+                  >
+                    {/* Avatar column — fixed width so bubbles align even when avatar is hidden */}
+                    <div className="w-8 shrink-0 flex items-end justify-center">
+                      {!isMe && isFirstInGroup && (
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${colorForId(
+                            msg.sender?.id ?? msg.senderId
+                          )}`}
+                        >
+                          {initials(name)}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className={`group flex flex-col max-w-[68%] ${isMe ? 'items-end' : 'items-start'}`}>
+                      {!isMe && isFirstInGroup && (
+                        <span className="text-xs font-medium text-gray-500 mb-1 ml-1">
+                          {name}
+                        </span>
+                      )}
+
+                      <div className="flex items-end gap-1.5">
+                        {isMe && (
+                          <span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity mb-1 whitespace-nowrap">
+                            {formatTime(msg.createdAt)}
+                          </span>
+                        )}
+
+                        <div
+                          className={`px-3.5 py-2 text-sm leading-relaxed break-words shadow-sm ${
+                            isMe
+                              ? 'bg-gradient-to-br from-primary-600 to-primary-700 text-white rounded-2xl rounded-tr-md'
+                              : 'bg-white text-gray-800 rounded-2xl rounded-tl-md border border-gray-100'
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+
+                        {!isMe && (
+                          <span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity mb-1 whitespace-nowrap">
+                            {formatTime(msg.createdAt)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </AnimatePresence>
           )}
+          <div ref={bottomRef} />
         </div>
 
         {/* Input */}
-        <div className="border-t border-gray-100 p-3 flex gap-2">
-          <input
-            className="input flex-1"
-            placeholder="Type a message..."
+        <div className="border-t border-gray-100 bg-white p-3 flex items-end gap-2">
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            className="flex-1 resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary-300/60 focus:bg-white transition-all"
+            style={{ minHeight: 42, maxHeight: 120 }}
+            placeholder="Введите сообщение..."
             value={message}
-            onChange={e => setMessage(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSend()}
+            onChange={handleTextareaChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSend()
+              }
+            }}
           />
-          <Button size="sm" onClick={handleSend} loading={sendMutation.isPending}>
-            <Send size={14} />
-          </Button>
+          <button
+            onClick={handleSend}
+            disabled={!message.trim() || sendMutation.isPending}
+            className="h-[42px] w-[42px] shrink-0 rounded-2xl bg-primary-600 text-white flex items-center justify-center hover:bg-primary-700 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+          >
+            {sendMutation.isPending ? <Spinner size="sm" /> : <Send size={16} />}
+          </button>
         </div>
       </Card>
     </div>

@@ -1,0 +1,11 @@
+fix(groups): auth header on chat requests, message field mapping, realtime delivery
+
+- groupSlice.apiCall: attach Authorization Bearer token (was using
+  raw fetch with no auth header -> all group/chat requests returned 401)
+- groupService.getChatMessages/sendMessage: map {user, createdAt} to the
+  flat shape the frontend expects (nickname, profileImageUrl, sentAt) ->
+  fixes TypeError crash when rendering another member's message
+- groupController.sendMessage: broadcast new message via io.to(`group:{id}`)
+  so other members see it without refetching
+- GroupChat.tsx: join/leave the group's socket room and listen for
+  'chat:message' to append messages in realtime

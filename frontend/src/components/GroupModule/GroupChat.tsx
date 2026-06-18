@@ -20,9 +20,12 @@ import {
   sendChatMessage,
   toggleChatEnabled,
   setMemberSendPermission,
+  appendMessage,
 } from '@/store/groupSlice';
+import { getSocket } from '@/socket/socket.client';
 import type { AppDispatch, RootState } from '@/store';
 import { GroupRole } from '@/types/group';
+import type { ChatMessage } from '@/types/group';
 
 interface GroupChatProps {
   groupId: string;
@@ -59,6 +62,24 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
     }
   }, [dispatch, groupId, group?.chatEnabled]);
 
+  // ─── Realtime: подключаемся к комнате группы и слушаем входящие сообщения ──
+  useEffect(() => {
+    if (!group?.chatEnabled) return;
+
+    const socket = getSocket();
+    socket.emit('group:join', groupId);
+
+    const handleIncoming = (msg: ChatMessage) => {
+      if (msg.groupId === groupId) dispatch(appendMessage(msg));
+    };
+    socket.on('chat:message', handleIncoming);
+
+    return () => {
+      socket.off('chat:message', handleIncoming);
+      socket.emit('group:leave', groupId);
+    };
+  }, [dispatch, groupId, group?.chatEnabled]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -86,7 +107,7 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
         }}
       >
         <ChatBubbleOutlineIcon sx={{ fontSize: 40, opacity: 0.3 }} />
-        <Typography variant="body2">채팅이 꺼져 있어요</Typography>
+        <Typography variant="body2">Чат выключен</Typography>
         {isOwner && (
           <FormControlLabel
             control={
@@ -97,7 +118,7 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
                 }
               />
             }
-            label="채팅 켜기"
+            label="Включить чат"
           />
         )}
       </Box>
@@ -130,7 +151,7 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
                 }
               />
             }
-            label={<Typography variant="caption">채팅</Typography>}
+            label={<Typography variant="caption">Чат</Typography>}
           />
           <FormControlLabel
             control={
@@ -154,7 +175,7 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
               />
             }
             label={
-              <Typography variant="caption">멤버 메시지 허용</Typography>
+              <Typography variant="caption">Разрешить сообщения участникам</Typography>
             }
           />
         </Box>
@@ -241,7 +262,7 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
                         fontSize: 10,
                       }}
                     >
-                      {new Date(msg.sentAt).toLocaleTimeString('ko-KR', {
+                      {new Date(msg.sentAt).toLocaleTimeString('ru-RU', {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
@@ -269,7 +290,7 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
                   handleSend();
                 }
               }}
-              placeholder="메시지 입력..."
+              placeholder="Введите сообщение..."
               multiline
               maxRows={4}
               fullWidth
@@ -296,7 +317,7 @@ export default function GroupChat({ groupId, currentUserId }: GroupChatProps) {
             color="text.secondary"
             sx={{ py: 1, textAlign: 'center', width: '100%' }}
           >
-            메시지 전송 권한이 없어요
+            Нет прав на отправку сообщений
           </Typography>
         )}
       </Box>

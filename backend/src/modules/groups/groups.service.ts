@@ -82,16 +82,16 @@ export const leaveGroup = async (userId: string, groupId: string) => {
 
 export const getGroupMessages = async (groupId: string, page = 1, limit = 50) => {
   const [messages, total] = await Promise.all([
-    prisma.chatMessage.findMany({
+    prisma.groupChatMessage.findMany({
       where: { groupId },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        sender: { select: { id: true, name: true, tag: true, avatar: true } },
+        user: { select: { id: true, name: true, tag: true, avatar: true } },
       },
     }),
-    prisma.chatMessage.count({ where: { groupId } }),
+    prisma.groupChatMessage.count({ where: { groupId } }),
   ])
 
   return { messages: messages.reverse(), total, page, limit }
@@ -131,10 +131,10 @@ export const sendMessage = async (userId: string, groupId: string, content: stri
   })
   if (!member) throw new AppError('Not a member', 403)
 
-  return prisma.chatMessage.create({
-    data: { groupId, senderId: userId, content },
+  return prisma.groupChatMessage.create({
+    data: { groupId, userId, content },
     include: {
-      sender: { select: { id: true, name: true, tag: true, avatar: true } },
+      user: { select: { id: true, name: true, tag: true, avatar: true } },
     },
   })
 }
