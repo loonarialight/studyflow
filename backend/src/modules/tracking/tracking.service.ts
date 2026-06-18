@@ -8,6 +8,28 @@ export const startSession = async (userId: string, data: {
   isPomodoro?: boolean
   groupId?: string
 }) => {
+  // Защита от "зависших" сессий: если фронт перезагрузился и потерял sessionId,
+  // у пользователя могла остаться старая активная сессия (endedAt: null) навсегда.
+  // Перед стартом новой — закрываем все его старые активные сессии И засчитываем
+  // их время в дневную статистику, точно так же, как обычный stopSession.
+  const stale = await prisma.studySession.findMany({
+    where: { userId, endedAt: null },
+  })
+
+  for (const s of stale) {
+    const endedAt = new Date()
+    const duration = Math.round((endedAt.getTime() - s.startedAt.getTime()) / 1000)
+
+    await prisma.studySession.update({
+      where: { id: s.id },
+      data: { endedAt, duration },
+    })
+
+    // Раньше этот шаг отсутствовал — время зависшей сессии просто пропадало,
+    // не попадая в Analytics.totalMinutes.
+    await upsertAnalytics(userId, Math.round(duration / 60))
+  }
+
   return prisma.studySession.create({
     data: {
       userId,

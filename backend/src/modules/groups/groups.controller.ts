@@ -104,6 +104,14 @@ import { successResponse, paginatedResponse } from '../../utils/response'
  *     responses:
  *       200:
  *         description: List of day-off records for that date
+ *
+ * /api/groups/{id}/presence:
+ *   get:
+ *     tags: [Groups]
+ *     summary: Live "who is studying now" view for the group
+ *     responses:
+ *       200:
+ *         description: List of members with isStudyingNow + todaySeconds, sorted by todaySeconds desc
  */
 export const list = async (req: AuthRequest, res: Response) => {
   const result = await svc.listGroups({
@@ -169,4 +177,11 @@ export const getDayOffs = async (req: AuthRequest, res: Response) => {
   const date = (req.query.date as string) || new Date().toISOString().split('T')[0]
   const dayOffs = await svc.getDayOffs(req.params.id, date)
   return successResponse(res, dayOffs)
+}
+
+// ─── Presence ─────────────────────────────────────────────────────────────────
+
+export const presence = async (req: AuthRequest, res: Response) => {
+  const data = await svc.getGroupPresence(req.params.id)
+  return successResponse(res, data)
 }

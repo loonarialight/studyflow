@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, Search, Plus, Trophy, MessageCircle, ArrowLeft, Send, CalendarOff } from 'lucide-react'
+import { Users, Search, Plus, Trophy, MessageCircle, ArrowLeft, Send, CalendarOff, Flame, Play, Square } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useNavigate, useParams } from 'react-router-dom'
 import { groupsApi } from '../../api/endpoints'
 import { useAuthStore } from '../../store/auth.store'
+import { useTimerStore, formatTime as formatElapsed } from '../../store/timer.store'
 import { Card, Button, Spinner, Empty, Badge } from '../../shared/components/ui'
 
 // ─── Chat helpers ───────────────────────────────────────────────────────────
@@ -52,6 +53,13 @@ function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatDuration(totalSeconds: number) {
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = Math.floor(totalSeconds % 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 function todayKey() {
   return new Date().toISOString().split('T')[0]
 }
@@ -95,6 +103,140 @@ function buildFeed(messages: any[], currentUserId?: string): FeedItem[] {
   }
 
   return feed
+}
+
+// ─── Study session control ────────────────────────────────────────────────────
+// Старт/стоп таймера, привязанного к этой группе (groupId уходит в trackingApi),
+// чтобы "Кто учится сейчас" реально отражало активность из этого чата.
+
+const StudySessionControl = ({ groupId }: { groupId: string }) => {
+  const qc = useQueryClient()
+  const timer = useTimerStore()
+  const isRunningHere = timer.mode !== 'idle' && timer.groupId === groupId
+  const isRunningElsewhere = timer.mode !== 'idle' && timer.groupId !== groupId
+
+  const handleStart = async () => {
+    try {
+      await timer.start(undefined, null, false, groupId)
+      // Не ждём следующего 10-сек опроса — обновляем presence сразу же
+      qc.invalidateQueries({ queryKey: ['group-presence', groupId] })
+      toast.success('Сессия начата ⏱')
+    } catch {
+      toast.error('Не удалось начать сессию')
+    }
+  }
+
+  const handleStop = async () => {
+    const elapsedAtStop = timer.elapsed
+    await timer.stop()
+    qc.invalidateQueries({ queryKey: ['group-presence', groupId] })
+    toast.success(`Сессия завершена — ${formatElapsed(elapsedAtStop)}`)
+  }
+
+  if (isRunningHere) {
+    return (
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-xs font-mono tabular-nums text-orange-600 bg-orange-50 px-2.5 py-1.5 rounded-full">
+          {formatElapsed(timer.elapsed)}
+        </span>
+        <button
+          onClick={handleStop}
+          className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-full bg-gray-700 text-white hover:bg-gray-800 transition-colors"
+        >
+          <Square size={11} /> Стоп
+        </button>
+      </div>
+    )
+  }
+
+  if (isRunningElsewhere) {
+    return (
+      <span className="text-xs text-gray-400 shrink-0">
+        Сессия идёт в другом месте — {formatElapsed(timer.elapsed)}
+      </span>
+    )
+  }
+
+  return (
+    <button
+      onClick={handleStart}
+      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-primary-600 text-white hover:bg-primary-700 transition-colors shrink-0"
+    >
+      <Play size={11} /> Начать учиться здесь
+    </button>
+  )
+}
+
+// ─── Presence grid ("кто сейчас учится") ─────────────────────────────────────
+
+interface PresenceMember {
+  userId: string
+  name: string
+  avatar?: string | null
+  isStudyingNow: boolean
+  todaySeconds: number
+  currentSubject?: string | null
+}
+
+const PresenceGrid = ({ groupId }: { groupId: string }) => {
+  const { data, isLoading } = useQuery({
+    queryKey: ['group-presence', groupId],
+    queryFn: () => groupsApi.presence(groupId).then(r => r.data.data as PresenceMember[]),
+    refetchInterval: 10000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 px-5 py-3 border-b border-gray-100 bg-white">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-16 rounded-xl bg-gray-100 animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
+  if (!data?.length) return null
+
+  return (
+    <div className="border-b border-gray-100 bg-white px-5 py-3">
+      <p className="text-xs text-gray-400 mb-2">Кто учится сейчас</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+        {data.map((m) => (
+          <div
+            key={m.userId}
+            className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border ${
+              m.isStudyingNow
+                ? 'border-orange-200 bg-orange-50'
+                : 'border-gray-100 bg-gray-50'
+            }`}
+          >
+            <div
+              className={`relative w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${colorForId(
+                m.userId
+              )}`}
+            >
+              {initials(m.name)}
+              {m.isStudyingNow && (
+                <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-orange-500 flex items-center justify-center ring-2 ring-white">
+                  <Flame size={9} className="text-white" />
+                </span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-800 truncate">{m.name}</p>
+              <p
+                className={`text-[11px] font-mono tabular-nums ${
+                  m.isStudyingNow ? 'text-orange-600' : 'text-gray-400'
+                }`}
+              >
+                {formatDuration(m.todaySeconds)}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // ─── Day-off panel ──────────────────────────────────────────────────────────
@@ -230,13 +372,15 @@ const GroupDetailView = ({ id }: { id: string }) => {
             <p className="text-sm text-gray-500 truncate">{data.description}</p>
           )}
         </div>
-        <div className="ml-auto shrink-0">
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <StudySessionControl groupId={id} />
           <Badge color="purple">{data._count?.members || 0} members</Badge>
         </div>
       </div>
 
       {/* Chat */}
       <Card className="flex flex-col h-[68vh] overflow-hidden p-0 border border-gray-100">
+        <PresenceGrid groupId={id} />
         <DayOffPanel groupId={id} />
 
         {/* Messages — full width of the container, no centered column */}

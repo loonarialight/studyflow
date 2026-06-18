@@ -18,4 +18,7 @@ router.post('/:id/messages', ctrl.sendMessage)
 router.post('/:id/dayoff', ctrl.setDayOff)
 router.get('/:id/dayoff', ctrl.getDayOffs)
 
+// ─── Presence ("кто сейчас учится") ───────────────────────────────────────────
+router.get('/:id/presence', ctrl.presence)
+
 export default router

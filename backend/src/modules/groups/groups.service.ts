@@ -169,3 +169,75 @@ export const getDayOffs = async (groupId: string, date: string) => {
     where: { groupId, date },
   })
 }
+
+// ─── Presence ("кто сейчас учится") ──────────────────────────────────────────
+// Аналог 캠스터디-вида: для каждого участника группы — учится ли он прямо
+// сейчас (есть активная StudySession с endedAt: null) и сколько успел сегодня.
+// Используем уже посчитанные Analytics.totalMinutes за завершённые сессии +
+// досчитываем "на лету" текущую активную сессию.
+//
+// Anti-stale guard: если "активная" сессия идёт дольше разумного предела (9ч —
+// тот же порог, что и anti-cheat на длительность непрерывного фокуса в спеке),
+// считаем её зависшей (фронт потерял sessionId при перезагрузке и не остановил
+// её) и не показываем как реальную активность — иначе одна забытая сессия
+// портит цифры на недели вперёд.
+
+const MAX_REASONABLE_ACTIVE_SECONDS = 9 * 60 * 60 // 9 часов
+
+export const getGroupPresence = async (groupId: string) => {
+  const members = await prisma.groupMember.findMany({
+    where: { groupId, isActive: true },
+    include: {
+      user: { select: { id: true, name: true, tag: true, avatar: true } },
+    },
+  })
+
+  const userIds = members.map((m) => m.userId)
+  if (userIds.length === 0) return []
+
+  const todayStart = new Date(new Date().toDateString())
+
+  const [analytics, activeSessions] = await Promise.all([
+    prisma.analytics.findMany({
+      where: { userId: { in: userIds }, date: todayStart },
+    }),
+    prisma.studySession.findMany({
+      where: { userId: { in: userIds }, endedAt: null },
+      orderBy: { startedAt: 'desc' }, // самая свежая активная сессия — первая
+    }),
+  ])
+
+  const presence = members.map((m) => {
+    const a = analytics.find((x) => x.userId === m.userId)
+    // Берём САМУЮ СВЕЖУЮ активную сессию пользователя (на случай если их
+    // несколько из-за старого бага с зависанием)
+    const active = activeSessions.find((s) => s.userId === m.userId)
+
+    const baseSeconds = (a?.totalMinutes ?? 0) * 60
+
+    let liveSeconds = 0
+    let isStudyingNow = false
+
+    if (active) {
+      const elapsed = Math.max(0, Math.floor((Date.now() - active.startedAt.getTime()) / 1000))
+      if (elapsed <= MAX_REASONABLE_ACTIVE_SECONDS) {
+        liveSeconds = elapsed
+        isStudyingNow = true
+      }
+      // иначе — зависшая сессия, игнорируем её полностью (не светим как активную,
+      // не прибавляем её время)
+    }
+
+    return {
+      userId: m.userId,
+      name: m.user.name,
+      tag: m.user.tag,
+      avatar: m.user.avatar,
+      isStudyingNow,
+      todaySeconds: baseSeconds + liveSeconds,
+      currentSubject: isStudyingNow ? active?.subject ?? null : null,
+    }
+  })
+
+  return presence.sort((a, b) => b.todaySeconds - a.todaySeconds)
+}

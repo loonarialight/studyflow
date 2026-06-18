@@ -9,6 +9,7 @@ interface TimerState {
   elapsed: number        // seconds
   subject: string
   categoryId: string | null
+  groupId: string | null   // если сессия запущена из конкретной группы
   intervalRef: ReturnType<typeof setInterval> | null
 
   // Pomodoro
@@ -16,7 +17,7 @@ interface TimerState {
   pomodoroWorkMin: number
   pomodoroBreakMin: number
 
-  start: (subject?: string, categoryId?: string, isPomodoro?: boolean) => Promise<void>
+  start: (subject?: string, categoryId?: string | null, isPomodoro?: boolean, groupId?: string | null) => Promise<void>
   stop: () => Promise<void>
   pause: () => void
   resume: () => void
@@ -31,6 +32,7 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   elapsed: 0,
   subject: '',
   categoryId: null,
+  groupId: null,
   intervalRef: null,
   pomodoroCount: 0,
   pomodoroWorkMin: 25,
@@ -40,12 +42,13 @@ export const useTimerStore = create<TimerState>((set, get) => ({
 
   tick: () => set((s) => ({ elapsed: s.elapsed + 1 })),
 
-  start: async (subject = '', categoryId = null, isPomodoro = false) => {
+  start: async (subject = '', categoryId = null, isPomodoro = false, groupId = null) => {
     const { data } = await trackingApi.startSession({
       subject,
       categoryId,
-      type: isPomodoro ? 'POMODORO' : 'FOCUS',
+      type: isPomodoro ? 'POMODORO' : (groupId ? 'GROUP' : 'FOCUS'),
       isPomodoro,
+      groupId: groupId ?? undefined,
     })
 
     const intervalRef = setInterval(() => get().tick(), 1000)
@@ -56,6 +59,7 @@ export const useTimerStore = create<TimerState>((set, get) => ({
       elapsed: 0,
       subject,
       categoryId,
+      groupId,
       intervalRef,
     })
   },
@@ -68,7 +72,7 @@ export const useTimerStore = create<TimerState>((set, get) => ({
       await trackingApi.stopSession(sessionId).catch(console.error)
     }
 
-    set({ mode: 'idle', sessionId: null, elapsed: 0, intervalRef: null, pomodoroCount: 0 })
+    set({ mode: 'idle', sessionId: null, elapsed: 0, intervalRef: null, pomodoroCount: 0, groupId: null })
   },
 
   pause: () => {
@@ -85,7 +89,7 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   reset: () => {
     const { intervalRef } = get()
     if (intervalRef) clearInterval(intervalRef)
-    set({ mode: 'idle', sessionId: null, elapsed: 0, intervalRef: null })
+    set({ mode: 'idle', sessionId: null, elapsed: 0, intervalRef: null, groupId: null })
   },
 }))
 

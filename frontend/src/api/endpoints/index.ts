@@ -54,6 +54,9 @@ export const groupsApi = {
     api.post(`/groups/${id}/dayoff`, data),
   getDayOffs: (id: string, date?: string) =>
     api.get(`/groups/${id}/dayoff`, { params: { date } }),
+
+  // ─── Presence ("кто сейчас учится") ──────────────────────
+  presence: (id: string) => api.get(`/groups/${id}/presence`),
 }
 
 // ─── AI Chat ─────────────────────────────────────────────────
