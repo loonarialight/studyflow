@@ -19,8 +19,9 @@ export const OAuthCallbackPage = () => {
         id: payload.userId,
         email: payload.email,
         name: payload.name || payload.email,
-        isPremium: false,
-      })
+        isPremium: payload.isPremium ?? false,
+        role: payload.role ?? 'USER',
+     })
       navigate('/calendar', { replace: true })
     } else {
       navigate('/login', { replace: true })

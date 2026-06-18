@@ -9,6 +9,7 @@ interface User {
   tag?: string
   avatar?: string
   isPremium: boolean
+  role?: 'USER' | 'ADMIN'   // ← добавлено
 }
 
 interface AuthState {

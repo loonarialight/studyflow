@@ -17,9 +17,23 @@ import { GroupsPage } from './pages/groups/GroupsPage'
 import { AiChatPage } from './pages/more/AiChatPage'
 import { TrackingPage } from './pages/more/TrackingPage'
 
+// Admin pages
+import AdminLayout from './pages/admin/AdminLayout'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import AdminSubjects from './pages/admin/AdminSubjects'
+import AdminLessons from './pages/admin/AdminLessons'
+import AdminTests from './pages/admin/AdminTests'
+import AdminUsers from './pages/admin/AdminUsers'
+
+// Learn pages
+import { LearnPage } from './pages/learn/LearnPage'
+import { LearnTrackPage } from './pages/learn/LearnTrackPage'
+import { LearnSubjectPage } from './pages/learn/LearnSubjectPage'
+import { LearnLessonPage } from './pages/learn/LearnLessonPage'
+import PlannerPage from './pages/planner/PlannerPage'
+
 // Placeholder pages (to be filled)
-const PlannerPage = () => <div className="p-6"><h1 className="text-2xl font-semibold">Planner</h1><p className="text-gray-500 mt-1">Daily task planner coming soon</p></div>
-const LearnPage = () => <div className="p-6"><h1 className="text-2xl font-semibold">Learn</h1><p className="text-gray-500 mt-1">Lessons and courses coming soon</p></div>
+ 
 const MorePage = () => <div className="p-6"><h1 className="text-2xl font-semibold">More</h1><p className="text-gray-500 mt-1">Profile, settings and more</p></div>
 
 const queryClient = new QueryClient({
@@ -43,6 +57,20 @@ export default function App() {
             <Route path="/register" element={<RegisterPage />} />
           </Route>
           <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+
+          <Route path="/learn" element={<LearnPage />} />
+          <Route path="/learn/:trackSlug" element={<LearnTrackPage />} />
+          <Route path="/learn/:trackSlug/:subjectId" element={<LearnSubjectPage />} />
+          <Route path="/learn/lesson/:lessonId" element={<LearnLessonPage />} />
+
+          {/* Admin — отдельный layout, проверка роли внутри AdminLayout */}
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="subjects" element={<AdminSubjects />} />
+            <Route path="lessons" element={<AdminLessons />} />
+            <Route path="tests" element={<AdminTests />} />
+            <Route path="users" element={<AdminUsers />} />
+          </Route>
 
           {/* Protected */}
           <Route element={<AuthGuard />}>
