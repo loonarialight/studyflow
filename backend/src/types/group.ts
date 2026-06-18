@@ -1,3 +1,5 @@
+import { GroupRole, DayOffStatus, ViolationType } from '@prisma/client';
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export enum GroupType {
@@ -8,23 +10,6 @@ export enum GroupType {
 export enum GroupVisibility {
   PUBLIC = 'public',
   PRIVATE = 'private',
-}
-
-export enum GroupRole {
-  OWNER = 'owner',
-  MEMBER = 'member',
-}
-
-export enum DayOffStatus {
-  NONE = 'none',
-  HALF = 'half',
-  FULL = 'full',
-}
-
-export enum ViolationType {
-  UNAUTHORIZED_LEAVE = 'unauthorized_leave',
-  FAKE_TIMER = 'fake_timer',
-  MISSING_DAYOFF = 'missing_dayoff',
 }
 
 // ─── DB Models ────────────────────────────────────────────────────────────────
@@ -61,7 +46,7 @@ export interface DayOffDB {
   id: string;
   userId: string;
   groupId: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   status: DayOffStatus;
 }
 
@@ -139,7 +124,8 @@ export interface TransferOwnerBody {
 // ─── Anti-cheat constants ─────────────────────────────────────────────────────
 
 export const ANTI_CHEAT = {
-  MAX_DAILY_STUDY_MINUTES: 20 * 60,   // 20 hours
-  MAX_CONTINUOUS_FOCUS_MINUTES: 9 * 60, // 9 hours
+  MAX_DAILY_STUDY_MINUTES: 20 * 60,
+  MAX_CONTINUOUS_FOCUS_MINUTES: 9 * 60,
 } as const;
 
+export { GroupRole, DayOffStatus, ViolationType };
