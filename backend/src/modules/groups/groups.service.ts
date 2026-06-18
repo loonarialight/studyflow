@@ -1,5 +1,6 @@
 import { prisma } from '../../config/database'
 import { AppError } from '../../middleware/errorHandler'
+import { DayOffStatus } from '@prisma/client'
 
 export const createGroup = async (userId: string, data: {
   name: string; description?: string; goal?: string; isPublic?: boolean
@@ -125,6 +126,7 @@ export const getGroupRankings = async (groupId: string) => {
     }))
     .sort((a, b) => b.weeklyMinutes - a.weeklyMinutes)
 }
+
 export const sendMessage = async (userId: string, groupId: string, content: string) => {
   const member = await prisma.groupMember.findUnique({
     where: { groupId_userId: { groupId, userId } },
@@ -136,5 +138,34 @@ export const sendMessage = async (userId: string, groupId: string, content: stri
     include: {
       user: { select: { id: true, name: true, tag: true, avatar: true } },
     },
+  })
+}
+
+// ─── Day-off ────────────────────────────────────────────────────────────────
+// Day-off — явный статус, который ставит сам участник. Отсутствие активности
+// БЕЗ выставленного статуса трактуется как нарушение, а не нейтральное событие.
+
+export const setDayOff = async (
+  userId: string,
+  groupId: string,
+  status: DayOffStatus,
+  date: string
+) => {
+  const member = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId } },
+  })
+  if (!member) throw new AppError('Not a member', 403)
+
+  return prisma.groupDayOff.upsert({
+    where: { userId_groupId_date: { userId, groupId, date } },
+    create: { userId, groupId, date, status },
+    update: { status },
+  })
+}
+
+/** День по умолчанию — сегодня, если date не передан */
+export const getDayOffs = async (groupId: string, date: string) => {
+  return prisma.groupDayOff.findMany({
+    where: { groupId, date },
   })
 }

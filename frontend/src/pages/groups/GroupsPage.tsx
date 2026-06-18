@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, Search, Plus, Trophy, MessageCircle, ArrowLeft, Send } from 'lucide-react'
+import { Users, Search, Plus, Trophy, MessageCircle, ArrowLeft, Send, CalendarOff } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -52,6 +52,10 @@ function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 }
 
+function todayKey() {
+  return new Date().toISOString().split('T')[0]
+}
+
 const GROUP_GAP_MS = 4 * 60 * 1000 // сообщения одного автора реже чем раз в 4 мин — отдельные группы
 
 type FeedItem =
@@ -65,7 +69,7 @@ function buildFeed(messages: any[], currentUserId?: string): FeedItem[] {
   let lastTime = 0
 
   for (const msg of messages) {
-    const senderId = msg.sender?.id ?? msg.senderId ?? null
+    const senderId = msg.sender?.id ?? msg.senderId ?? msg.user?.id ?? msg.userId ?? null
     const ts = new Date(msg.createdAt).getTime()
     const dateKey = new Date(msg.createdAt).toDateString()
 
@@ -91,6 +95,61 @@ function buildFeed(messages: any[], currentUserId?: string): FeedItem[] {
   }
 
   return feed
+}
+
+// ─── Day-off panel ──────────────────────────────────────────────────────────
+
+const DAY_OFF_OPTIONS: { value: 'NONE' | 'HALF' | 'FULL'; label: string; activeClass: string }[] = [
+  { value: 'NONE', label: 'Учусь сегодня', activeClass: 'bg-emerald-600 text-white' },
+  { value: 'HALF', label: 'Полу-day-off', activeClass: 'bg-amber-500 text-white' },
+  { value: 'FULL', label: 'Day-off', activeClass: 'bg-gray-700 text-white' },
+]
+
+const DayOffPanel = ({ groupId }: { groupId: string }) => {
+  const qc = useQueryClient()
+  const currentUser = useAuthStore((s) => s.user)
+  const date = todayKey()
+
+  const { data: dayOffs } = useQuery({
+    queryKey: ['group-dayoffs', groupId, date],
+    queryFn: () => groupsApi.getDayOffs(groupId, date).then(r => r.data.data),
+  })
+
+  const myStatus: 'NONE' | 'HALF' | 'FULL' =
+    dayOffs?.find((d: any) => d.userId === currentUser?.id)?.status ?? 'NONE'
+
+  const setMutation = useMutation({
+    mutationFn: (status: 'NONE' | 'HALF' | 'FULL') =>
+      groupsApi.setDayOff(groupId, { status, date }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['group-dayoffs', groupId, date] })
+    },
+    onError: () => toast.error('Не удалось обновить статус'),
+  })
+
+  return (
+    <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 bg-white overflow-x-auto">
+      <CalendarOff size={14} className="text-gray-400 shrink-0" />
+      <span className="text-xs text-gray-500 shrink-0">Статус на сегодня:</span>
+      <div className="flex gap-1.5">
+        {DAY_OFF_OPTIONS.map((opt) => {
+          const active = myStatus === opt.value
+          return (
+            <button
+              key={opt.value}
+              onClick={() => !active && setMutation.mutate(opt.value)}
+              disabled={setMutation.isPending}
+              className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors whitespace-nowrap ${
+                active ? opt.activeClass : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 // ─── Group Detail ─────────────────────────────────────────────────────────────
@@ -162,7 +221,7 @@ const GroupDetailView = ({ id }: { id: string }) => {
         <Button variant="ghost" size="sm" onClick={() => navigate('/groups')}>
           <ArrowLeft size={16} />
         </Button>
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white shadow-sm shrink-0">
+        <div className="w-11 h-11 rounded-2xl bg-primary-600 flex items-center justify-center text-white shadow-sm shrink-0">
           <Users size={18} />
         </div>
         <div className="min-w-0">
@@ -177,9 +236,11 @@ const GroupDetailView = ({ id }: { id: string }) => {
       </div>
 
       {/* Chat */}
-      <Card className="flex flex-col h-[68vh] overflow-hidden p-0">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-gray-50/60">
+      <Card className="flex flex-col h-[68vh] overflow-hidden p-0 border border-gray-100">
+        <DayOffPanel groupId={id} />
+
+        {/* Messages — full width of the container, no centered column */}
+        <div className="flex-1 overflow-y-auto bg-gray-50 px-4 py-4 space-y-1">
           {messagesLoading ? (
             <div className="space-y-3">
               {[0, 1, 2].map((i) => (
@@ -190,7 +251,7 @@ const GroupDetailView = ({ id }: { id: string }) => {
               ))}
             </div>
           ) : feed.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400">
+            <div className="flex flex-col items-center justify-center h-[40vh] gap-2 text-gray-400">
               <MessageCircle size={32} className="opacity-30" />
               <p className="text-sm">Сообщений пока нет. Напишите первыми! 👋</p>
             </div>
@@ -208,7 +269,9 @@ const GroupDetailView = ({ id }: { id: string }) => {
                 }
 
                 const { msg, isFirstInGroup, isMe } = item
-                const name = msg.sender?.name || (isMe ? currentUser?.name : null) || 'Без имени'
+                const senderName = msg.sender?.name ?? msg.user?.name
+                const name = senderName || (isMe ? currentUser?.name : null) || 'Без имени'
+                const senderId = msg.sender?.id ?? msg.senderId ?? msg.user?.id ?? msg.userId
 
                 return (
                   <motion.div
@@ -225,7 +288,7 @@ const GroupDetailView = ({ id }: { id: string }) => {
                       {!isMe && isFirstInGroup && (
                         <div
                           className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${colorForId(
-                            msg.sender?.id ?? msg.senderId
+                            senderId
                           )}`}
                         >
                           {initials(name)}
@@ -233,7 +296,7 @@ const GroupDetailView = ({ id }: { id: string }) => {
                       )}
                     </div>
 
-                    <div className={`group flex flex-col max-w-[68%] ${isMe ? 'items-end' : 'items-start'}`}>
+                    <div className={`group flex flex-col max-w-[60%] ${isMe ? 'items-end' : 'items-start'}`}>
                       {!isMe && isFirstInGroup && (
                         <span className="text-xs font-medium text-gray-500 mb-1 ml-1">
                           {name}
@@ -248,10 +311,10 @@ const GroupDetailView = ({ id }: { id: string }) => {
                         )}
 
                         <div
-                          className={`px-3.5 py-2 text-sm leading-relaxed break-words shadow-sm ${
+                          className={`px-3.5 py-2.5 text-sm leading-relaxed break-words whitespace-pre-wrap ${
                             isMe
-                              ? 'bg-gradient-to-br from-primary-600 to-primary-700 text-white rounded-2xl rounded-tr-md'
-                              : 'bg-white text-gray-800 rounded-2xl rounded-tl-md border border-gray-100'
+                              ? 'bg-primary-600 text-white rounded-2xl rounded-tr-md'
+                              : 'bg-white text-gray-800 rounded-2xl rounded-tl-md border border-gray-200'
                           }`}
                         >
                           {msg.content}
@@ -272,7 +335,7 @@ const GroupDetailView = ({ id }: { id: string }) => {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
+        {/* Input — full width of the container */}
         <div className="border-t border-gray-100 bg-white p-3 flex items-end gap-2">
           <textarea
             ref={textareaRef}

@@ -1,4 +1,3 @@
-import { id } from 'date-fns/locale/id';
 import { api } from '../client'
 
 // ─── Auth ─────────────────────────────────────────────────────
@@ -47,8 +46,14 @@ export const groupsApi = {
   rankings: (id: string) => api.get(`/groups/${id}/rankings`),
   messages: (id: string, page?: number) =>
     api.get(`/groups/${id}/messages`, { params: { page } }),
-   sendMessage: (id: string, data: { content: string }) =>
-    api.post(`/groups/${id}/messages`, data), 
+  sendMessage: (id: string, data: { content: string }) =>
+    api.post(`/groups/${id}/messages`, data),
+
+  // ─── Day-off ──────────────────────────────────────────────
+  setDayOff: (id: string, data: { status: 'NONE' | 'HALF' | 'FULL'; date: string }) =>
+    api.post(`/groups/${id}/dayoff`, data),
+  getDayOffs: (id: string, date?: string) =>
+    api.get(`/groups/${id}/dayoff`, { params: { date } }),
 }
 
 // ─── AI Chat ─────────────────────────────────────────────────

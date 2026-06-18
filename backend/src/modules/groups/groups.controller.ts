@@ -75,6 +75,35 @@ import { successResponse, paginatedResponse } from '../../utils/response'
  *     responses:
  *       200:
  *         description: Chat messages
+ *
+ * /api/groups/{id}/dayoff:
+ *   post:
+ *     tags: [Groups]
+ *     summary: Set your own day-off status for a given date
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status, date]
+ *             properties:
+ *               status: { type: string, enum: [NONE, HALF, FULL] }
+ *               date: { type: string, example: "2026-06-19" }
+ *     responses:
+ *       200:
+ *         description: Day-off updated
+ *
+ *   get:
+ *     tags: [Groups]
+ *     summary: Get day-off statuses for all members on a given date
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema: { type: string, example: "2026-06-19" }
+ *     responses:
+ *       200:
+ *         description: List of day-off records for that date
  */
 export const list = async (req: AuthRequest, res: Response) => {
   const result = await svc.listGroups({
@@ -117,7 +146,27 @@ export const messages = async (req: AuthRequest, res: Response) => {
   )
   return paginatedResponse(res, result.messages, result.total, result.page, result.limit)
 }
+
 export const sendMessage = async (req: AuthRequest, res: Response) => {
   const message = await svc.sendMessage(req.user!.id, req.params.id, req.body.content)
   return successResponse(res, message, 'Message sent', 201)
+}
+
+// ─── Day-off ────────────────────────────────────────────────────────────────
+
+export const setDayOff = async (req: AuthRequest, res: Response) => {
+  const { status, date } = req.body as { status?: 'NONE' | 'HALF' | 'FULL'; date?: string }
+
+  if (!status || !date) {
+    return res.status(400).json({ success: false, message: 'status and date are required' })
+  }
+
+  const dayOff = await svc.setDayOff(req.user!.id, req.params.id, status as any, date)
+  return successResponse(res, dayOff, 'Day-off updated')
+}
+
+export const getDayOffs = async (req: AuthRequest, res: Response) => {
+  const date = (req.query.date as string) || new Date().toISOString().split('T')[0]
+  const dayOffs = await svc.getDayOffs(req.params.id, date)
+  return successResponse(res, dayOffs)
 }
