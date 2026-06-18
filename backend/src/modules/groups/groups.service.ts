@@ -125,3 +125,16 @@ export const getGroupRankings = async (groupId: string) => {
     }))
     .sort((a, b) => b.weeklyMinutes - a.weeklyMinutes)
 }
+export const sendMessage = async (userId: string, groupId: string, content: string) => {
+  const member = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId } },
+  })
+  if (!member) throw new AppError('Not a member', 403)
+
+  return prisma.chatMessage.create({
+    data: { groupId, senderId: userId, content },
+    include: {
+      sender: { select: { id: true, name: true, tag: true, avatar: true } },
+    },
+  })
+}

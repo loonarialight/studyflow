@@ -117,3 +117,7 @@ export const messages = async (req: AuthRequest, res: Response) => {
   )
   return paginatedResponse(res, result.messages, result.total, result.page, result.limit)
 }
+export const sendMessage = async (req: AuthRequest, res: Response) => {
+  const message = await svc.sendMessage(req.user!.id, req.params.id, req.body.content)
+  return successResponse(res, message, 'Message sent', 201)
+}

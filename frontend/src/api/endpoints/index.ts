@@ -1,3 +1,4 @@
+import { id } from 'date-fns/locale/id';
 import { api } from '../client'
 
 // ─── Auth ─────────────────────────────────────────────────────
@@ -46,6 +47,8 @@ export const groupsApi = {
   rankings: (id: string) => api.get(`/groups/${id}/rankings`),
   messages: (id: string, page?: number) =>
     api.get(`/groups/${id}/messages`, { params: { page } }),
+   sendMessage: (id: string, data: { content: string }) =>
+    api.post(`/groups/${id}/messages`, data), 
 }
 
 // ─── AI Chat ─────────────────────────────────────────────────

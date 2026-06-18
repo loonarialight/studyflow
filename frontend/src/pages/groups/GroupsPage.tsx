@@ -1,12 +1,121 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Users, Search, Plus, Trophy, MessageCircle } from 'lucide-react'
+import { Users, Search, Plus, Trophy, MessageCircle, ArrowLeft, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { groupsApi } from '../../api/endpoints'
 import { Card, Button, Spinner, Empty, Badge } from '../../shared/components/ui'
 
-export const GroupsPage = () => {
+// ─── Group Detail ─────────────────────────────────────────────────────────────
+
+const GroupDetailView = ({ id }: { id: string }) => {
+  const navigate = useNavigate()
+  const [message, setMessage] = useState('')
+
+  // getById → get
+  const { data, isLoading } = useQuery({
+    queryKey: ['group', id],
+    queryFn: () => groupsApi.get(id).then(r => r.data.data),
+  })
+
+  // getMessages → messages
+  const { data: messagesData, isLoading: messagesLoading } = useQuery({
+    queryKey: ['group-messages', id],
+    queryFn: () => groupsApi.messages(id).then(r => r.data.data),
+    refetchInterval: 5000,
+  })
+
+  // sendMessage — теперь есть в endpoints
+  const sendMutation = useMutation({
+    mutationFn: () => groupsApi.sendMessage(id, { content: message }),
+    onSuccess: () => setMessage(''),
+    onError: () => toast.error('Failed to send message'),
+  })
+
+  const handleSend = () => {
+    if (!message.trim()) return
+    sendMutation.mutate()
+  }
+
+  if (isLoading) return (
+    <div className="flex justify-center py-10"><Spinner size="lg" /></div>
+  )
+
+  if (!data) return (
+    <div className="p-6">
+      <Empty icon="👥" title="Group not found" description="" />
+    </div>
+  )
+
+  return (
+    <div className="p-6 space-y-4 animate-in">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/groups')}>
+          <ArrowLeft size={16} />
+        </Button>
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">{data.name}</h1>
+          {data.description && (
+            <p className="text-sm text-gray-500">{data.description}</p>
+          )}
+        </div>
+        <div className="ml-auto">
+          <Badge color="purple">{data._count?.members || 0} members</Badge>
+        </div>
+      </div>
+
+      {/* Chat */}
+      <Card className="flex flex-col h-[60vh]">
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {messagesLoading ? (
+            <div className="flex justify-center py-4"><Spinner /></div>
+          ) : !messagesData?.length ? (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+              No messages yet. Say hi! 👋
+            </div>
+          ) : (
+            messagesData.map((msg: any) => (
+              <div key={msg.id} className="flex gap-2">
+                <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center text-xs font-medium text-primary-600 shrink-0">
+                  {msg.sender?.name?.[0] ?? '?'}
+                </div>
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs font-medium text-gray-700">{msg.sender?.name ?? 'Unknown'}</span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-800">{msg.content}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Input */}
+        <div className="border-t border-gray-100 p-3 flex gap-2">
+          <input
+            className="input flex-1"
+            placeholder="Type a message..."
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSend()}
+          />
+          <Button size="sm" onClick={handleSend} loading={sendMutation.isPending}>
+            <Send size={14} />
+          </Button>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// ─── Groups List ──────────────────────────────────────────────────────────────
+
+const GroupsListView = () => {
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', goal: '' })
@@ -31,10 +140,11 @@ export const GroupsPage = () => {
   })
 
   const joinMutation = useMutation({
-    mutationFn: (id: string) => groupsApi.join(id),
-    onSuccess: () => {
+    mutationFn: (id: string) => groupsApi.join(id).then(() => id),
+    onSuccess: (id) => {
       toast.success('Joined group!')
       qc.invalidateQueries({ queryKey: ['groups'] })
+      navigate(`/groups/${id}`)
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to join'),
   })
@@ -51,7 +161,6 @@ export const GroupsPage = () => {
         </Button>
       </div>
 
-      {/* Create form */}
       {showCreate && (
         <Card className="p-5 space-y-3">
           <h3 className="font-semibold text-gray-900">Create new group</h3>
@@ -70,7 +179,6 @@ export const GroupsPage = () => {
         </Card>
       )}
 
-      {/* Search */}
       <div className="relative">
         <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
@@ -81,7 +189,6 @@ export const GroupsPage = () => {
         />
       </div>
 
-      {/* Grid */}
       {isLoading ? (
         <div className="flex justify-center py-10"><Spinner size="lg" /></div>
       ) : data?.data?.length === 0 ? (
@@ -96,7 +203,6 @@ export const GroupsPage = () => {
                 </div>
                 <Badge color="purple">{g._count?.members || 0} members</Badge>
               </div>
-
               <div>
                 <h3 className="font-semibold text-gray-900">{g.name}</h3>
                 {g.description && (
@@ -109,22 +215,14 @@ export const GroupsPage = () => {
                   </div>
                 )}
               </div>
-
               <div className="flex gap-2 pt-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 gap-1.5"
-                  onClick={() => navigate(`/groups/${g.id}`)}
-                >
+                <Button size="sm" variant="outline" className="flex-1 gap-1.5"
+                  onClick={() => navigate(`/groups/${g.id}`)}>
                   <MessageCircle size={13} /> View
                 </Button>
-                <Button
-                  size="sm"
-                  className="flex-1"
+                <Button size="sm" className="flex-1"
                   onClick={() => joinMutation.mutate(g.id)}
-                  loading={joinMutation.isPending}
-                >
+                  loading={joinMutation.isPending}>
                   Join
                 </Button>
               </div>
@@ -134,4 +232,11 @@ export const GroupsPage = () => {
       )}
     </div>
   )
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
+export const GroupsPage = () => {
+  const { id } = useParams<{ id: string }>()
+  return id ? <GroupDetailView id={id} /> : <GroupsListView />
 }

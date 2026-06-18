@@ -12,5 +12,6 @@ router.post('/:id/join', ctrl.join)
 router.post('/:id/leave', ctrl.leave)
 router.get('/:id/rankings', ctrl.rankings)
 router.get('/:id/messages', ctrl.messages)
+router.post('/:id/messages', ctrl.sendMessage)
 
 export default router

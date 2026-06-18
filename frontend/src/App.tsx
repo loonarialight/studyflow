@@ -33,7 +33,7 @@ import { LearnLessonPage } from './pages/learn/LearnLessonPage'
 import PlannerPage from './pages/planner/PlannerPage'
 
 // Placeholder pages (to be filled)
- 
+
 const MorePage = () => <div className="p-6"><h1 className="text-2xl font-semibold">More</h1><p className="text-gray-500 mt-1">Profile, settings and more</p></div>
 
 const queryClient = new QueryClient({
@@ -76,14 +76,17 @@ export default function App() {
           <Route element={<AuthGuard />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Navigate to="/calendar" replace />} />
-              <Route path="/calendar"  element={<CalendarPage />} />
-              <Route path="/planner"   element={<PlannerPage />} />
-              <Route path="/tracking"  element={<TrackingPage />} />
-              <Route path="/learn"     element={<LearnPage />} />
+              <Route path="/calendar" element={<CalendarPage />} />
+              <Route path="/planner" element={<PlannerPage />} />
+              <Route path="/tracking" element={<TrackingPage />} />
+              <Route path="/learn" element={<LearnPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/groups"    element={<GroupsPage />} />
-              <Route path="/ai"        element={<AiChatPage />} />
-              <Route path="/more"      element={<MorePage />} />
+              <Route path="/groups" element={<GroupsPage />} />
+              <Route path="/groups/:id" element={<GroupsPage />} />   
+              <Route path="/ai" element={<AiChatPage />} />
+              <Route path="/more" element={<MorePage />} />
+               
+              
             </Route>
           </Route>
 
